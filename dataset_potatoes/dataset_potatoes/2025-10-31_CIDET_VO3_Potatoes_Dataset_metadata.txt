@@ -1,0 +1,57 @@
+File name:
+2025-10-31_CIDET_VO3_Potatoes_Dataset_metadata.txt
+
+Creator:
+Dominik Štursa; Petr Doležel; Jakub Ksiažek
+
+Project no.:
+CZ.02.01.01/00/23_021/0008402
+
+Description:
+The dataset contains color images of potatoes captured on an industrial conveyor sorting line under real post-harvest conditions. It was created for developing and evaluating machine learning models for automatic potato quality classification using deep learning methods.
+
+Images were acquired using a Basler Ace series industrial camera positioned perpendicularly to the sorting belt to avoid perspective distortion. The dataset includes both cleaned (washed) and unwashed potatoes to represent real-world variability caused by soil type, harvesting conditions, and surface contamination. Additional non-potato objects such as stones, clods of earth, and plant residues were included to reflect the natural environment of sorting lines.
+
+Each object in the dataset was manually annotated and categorized into one of four classes:
+Good – healthy, undamaged potatoes, suitable for market sale
+Damaged – potatoes with visible mechanical or biological defects (cut, rotten, or diseased)
+Plant – plant residues, potato tops, weeds, or leaves
+Stone – stones or soil clods visually similar to potatoes
+
+The dataset is divided into the following subsets:
+Training set – mixed images of cleaned and unwashed potatoes
+Validation set – mixed samples used for model tuning
+Test sets – three independent parts:
+Cleaned test set – only cleaned potatoes
+Unwashed test set – only unwashed potatoes
+Combined test set – a mixture of both domains
+
+Publisher:
+University of Pardubice
+
+Contributor:
+University of Pardubice
+
+Date:
+2025-10-31
+
+Type:
+Image
+
+Format:
+.bmp
+
+Identifier:
+10.5281/zenodo.17494608
+
+Source:
+
+
+Language:
+English
+
+Project Task:
+Task 3.3
+
+License:
+CC BY 4.0

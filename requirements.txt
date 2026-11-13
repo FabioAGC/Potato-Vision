@@ -1,0 +1,13 @@
+# PyTorch CPU: instale com o índice da PyTorch (o setup.ps1 já faz isso)
+#   uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+torch>=2.4
+torchvision>=0.19
+ultralytics>=8.3
+opencv-python>=4.9
+onnx>=1.16
+onnxruntime>=1.18
+pyyaml>=6
+scikit-learn>=1.4
+numpy>=1.26
+# Câmera industrial GigE/USB3 (opcional, só quando a câmera chegar):
+# harvesters>=1.4

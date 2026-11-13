@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Dados gerados (recriados por train.py a partir de dataset_potatoes/)
+data/
+*.cache
+
+# Artefatos de treino e logs
+runs/
+*.log
+
+# Pesos base baixados automaticamente pelo Ultralytics
+yolo11n-cls.pt
