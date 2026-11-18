@@ -48,9 +48,13 @@ def _canonical_hash(img: np.ndarray) -> str:
 
 
 # ---------------------------------------------------------------- scan
-def scan_source(source: Path) -> tuple[dict[str, list[Path]], dict]:
-    """Agrupa imagens únicas por classe."""
-    files = sorted(p for p in Path(source).rglob("*") if p.suffix.lower() in IMG_EXTS)
+def scan_source(source: Path | list[Path]) -> tuple[dict[str, list[Path]], dict]:
+    """Agrupa imagens únicas por classe. Aceita uma pasta ou uma lista de pastas
+    (ex.: dataset original + dataset_roboflow). Pastas cujo nome começa com "_"
+    (ex.: _frames) são ignoradas."""
+    sources = [Path(s) for s in (source if isinstance(source, (list, tuple)) else [source])]
+    files = sorted(p for src in sources for p in src.rglob("*")
+                   if p.suffix.lower() in IMG_EXTS and not any(x.startswith("_") for x in p.relative_to(src).parts))
     if not files:
         raise SystemExit(f"Nenhuma imagem encontrada em {source}")
     labels: dict[str, set[str]] = defaultdict(set)
@@ -73,7 +77,8 @@ def scan_source(source: Path) -> tuple[dict[str, list[Path]], dict]:
             per_class[next(iter(cls))].append(first[h])
     per_class = {c: sorted(v) for c, v in sorted(per_class.items())}
     info = {
-        "source": str(source),
+        "source": [str(s) for s in sources] if len(sources) > 1 else str(sources[0]),
+        "files_per_source": {str(s): sum(1 for p in files if src_of(p, s)) for s in sources},
         "files_found": len(files),
         "unreadable": unreadable,
         "unique_images": len(labels),
@@ -82,6 +87,14 @@ def scan_source(source: Path) -> tuple[dict[str, list[Path]], dict]:
         "unique_per_class": {c: len(v) for c, v in per_class.items()},
     }
     return per_class, info
+
+
+def src_of(p: Path, src: Path) -> bool:
+    try:
+        p.relative_to(src)
+        return True
+    except ValueError:
+        return False
 
 
 # ---------------------------------------------------------------- write
@@ -199,7 +212,7 @@ def write_parts(parts: dict[str, dict[str, list[Path]]], out: Path, normal: set[
     return res
 
 
-def prepare_dataset(source: Path, out: Path, split=(0.7, 0.15, 0.15), seed: int = 42,
+def prepare_dataset(source: Path | list[Path], out: Path, split=(0.7, 0.15, 0.15), seed: int = 42,
                     normal: set[str] | None = None, windows: dict[str, int] | None = None) -> dict:
     per_class, info = scan_source(source)
     parts = split_groups(per_class, split, seed)

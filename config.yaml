@@ -8,6 +8,8 @@ data:
   # de split no meio, ex.: train/Stone/x.bmp). A classe é sempre o nome da
   # pasta imediatamente acima da imagem.
   source: dataset_potatoes/dataset_potatoes
+  # Vários datasets juntos (ex.: depois de rodar import_roboflow.py):
+  # source: [dataset_potatoes/dataset_potatoes, dataset_roboflow]
   prepared: data/prepared          # saída: train/val/test sem duplicatas
   split: [0.70, 0.15, 0.15]        # treino / validação / teste
   seed: 42

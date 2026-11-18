@@ -85,6 +85,23 @@ Os modelos de GPU ficam em `models/gpu/` e não substituem os de CPU. Compare as
 validações cruzadas no fim do notebook antes de trocar. Para treinar em GPU fora do Kaggle:
 `train.py --config config.kaggle.yaml` (`device: auto` usa a GPU se houver).
 
+### Juntar um dataset do Roboflow
+
+Datasets de **detecção** (quadro inteiro com caixas) do Roboflow viram recortes por classe com
+`import_roboflow.py`. Exporte em **YOLOv8** (*Download Dataset → YOLOv8 → download zip*) e rode:
+
+```powershell
+& $py import_roboflow.py potato.v1i.yolov8.zip                 # cria dataset_roboflow/<Classe>/
+& $py train.py --source dataset_potatoes/dataset_potatoes dataset_roboflow
+```
+
+* As classes são mapeadas pelo nome (potato → Good, stone/rock → Stone, plant/leaf → Plant,
+  damaged/rotten → Damaged). Outras são ignoradas; use `--map nome=Classe` para ajustar.
+* Cópias aumentadas pelo Roboflow (`*.rf.*`) viram uma só foto, para não vazar do treino para o teste.
+* Os quadros inteiros ficam em `dataset_roboflow/_frames/` (ignorados no treino).
+* No Kaggle o notebook baixa sozinho [acu/potato-sjlt6](https://universe.roboflow.com/acu/potato-sjlt6)
+  se houver o secret `ROBOFLOW_API_KEY`.
+
 ### Formato do dataset
 
 Uma pasta por classe (pode haver pastas de split no meio, elas são ignoradas):
@@ -134,6 +151,7 @@ As câmeras ao vivo leem numa thread separada (sempre o quadro mais novo) e
 config.yaml          configuração geral
 config.kaggle.yaml   configuração maior para treino em GPU
 kaggle_train.ipynb   notebook de treino no Kaggle
+import_roboflow.py   converte export YOLOv8 do Roboflow em recortes por classe
 train.py             pipeline de treino + avaliação + exportação
 run.py               detecção ao vivo com tela
 capture.py           captura de imagens para dataset

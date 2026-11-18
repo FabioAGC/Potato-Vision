@@ -2,6 +2,7 @@
 
     python train.py                       # usa o dataset do config.yaml
     python train.py --source D:/fotos     # outro dataset (pastas por classe)
+    python train.py --source dataset_potatoes/dataset_potatoes dataset_roboflow   # vários datasets juntos
     python train.py --cv 5                # + validação cruzada (métrica mais confiável)
     python train.py --unknown-test        # + teste de objeto desconhecido
     python train.py --device cuda         # treina na GPU (padrão: config `device`, "auto")
@@ -99,7 +100,7 @@ def run_experiment(cfg, data_dir: Path, out_dir: Path, tag: str, exclude: set[st
 
 
 # ---------------------------------------------------------------- validação cruzada
-def cross_validate(cfg, k: int, source: Path) -> dict:
+def cross_validate(cfg, k: int, source: Path | list[Path]) -> dict:
     """Cada imagem é testada uma vez, por um modelo que não a viu no treino."""
     if k < 3:
         raise SystemExit("--cv precisa de pelo menos 3 partes (teste, validação e treino).")
@@ -167,7 +168,9 @@ def write_report(cfg, ds: dict, main: dict, cv: dict | None, unk: dict | None, o
     L = ["# Relatório de treino – detecção de corpos estranhos", "",
          f"Gerado em {time.strftime('%Y-%m-%d %H:%M')}", "",
          "## Dados", "",
-         f"- Imagens encontradas: **{ds['files_found']}**",
+         f"- Imagens encontradas: **{ds['files_found']}**"
+         + ("".join(f"\n  - `{Path(k).name}`: {v}" for k, v in ds.get("files_per_source", {}).items())
+            if len(ds.get("files_per_source", {})) > 1 else ""),
          f"- Duplicatas removidas (cópias exatas + giradas/espelhadas): **{ds['duplicates_removed']}**",
          f"- Imagens únicas usadas: **{ds['unique_images'] - ds['label_conflicts_removed']}**",
          "", "| Classe | Únicas | Treino | Validação | Teste |", "|---|---|---|---|---|"]
@@ -254,7 +257,8 @@ def _strip(m: dict | None) -> dict | None:
 def main():
     ap = argparse.ArgumentParser(description="Treina o detector de corpos estranhos.")
     ap.add_argument("--config", default=None)
-    ap.add_argument("--source", default=None, help="pasta do dataset (sobrescreve o config)")
+    ap.add_argument("--source", nargs="+", default=None,
+                    help="pasta(s) do dataset (sobrescreve o config); várias pastas são juntadas")
     ap.add_argument("--cv", type=int, default=0, help="nº de partes da validação cruzada (0 = não)")
     ap.add_argument("--unknown-test", action="store_true", help="teste de objeto desconhecido")
     ap.add_argument("--no-export", action="store_true")
@@ -269,10 +273,13 @@ def main():
     cfg["device"] = resolve_device(a.device or cfg.get("device", "auto"))
     cfg["_path"] = Path(a.config).name if a.config else "config.yaml"
     log.info("Dispositivo de treino: %s", cfg["device"])
-    source = resolve(a.source or cfg.data.source)
+    src = a.source or cfg.data.source
+    source = [resolve(x) for x in src] if isinstance(src, (list, tuple)) else resolve(src)
+    if isinstance(source, list) and len(source) == 1:
+        source = source[0]
     prepared = resolve(cfg.data.prepared)
 
-    log.info("1/5 Preparando dados de %s", source)
+    log.info("1/5 Preparando dados de %s", ", ".join(map(str, source)) if isinstance(source, list) else source)
     rep_json = prepared / "dataset_report.json"
     if a.skip_prepare or a.reuse:
         if not rep_json.exists():
