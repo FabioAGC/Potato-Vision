@@ -28,6 +28,9 @@ display_names:
   Unknown: Desconhecido
 
 # ---------------- Modelos ----------------
+# Onde treinar: auto (GPU se houver, senão CPU) | cpu | cuda
+device: auto
+
 classifier:
   model: yolo11n-cls.pt            # pesos base (baixados automaticamente)
   imgsz: 64

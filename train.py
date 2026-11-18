@@ -4,6 +4,8 @@
     python train.py --source D:/fotos     # outro dataset (pastas por classe)
     python train.py --cv 5                # + validação cruzada (métrica mais confiável)
     python train.py --unknown-test        # + teste de objeto desconhecido
+    python train.py --device cuda         # treina na GPU (padrão: config `device`, "auto")
+    python train.py --config config.kaggle.yaml   # configuração maior para GPU (Kaggle)
 
 Etapas: prepara dados -> treina YOLO-cls -> treina PaDiM -> calibra limiar ->
 avalia no teste -> exporta ONNX -> gera reports/relatorio.md
@@ -20,7 +22,7 @@ from pathlib import Path
 import numpy as np
 
 from potato_cv.classifier import Classifier, train_classifier
-from potato_cv.config import ROOT, load_config, resolve
+from potato_cv.config import ROOT, load_config, resolve, resolve_device
 from potato_cv.data import (kfold, list_split, load_images, merge_groups, prepare_dataset, scan_source,
                             write_parts)
 from potato_cv.decision import decide
@@ -49,18 +51,21 @@ def run_experiment(cfg, data_dir: Path, out_dir: Path, tag: str, exclude: set[st
                     shutil.copytree(d, cls_data / s / d.name)
 
     c = cfg.classifier
+    device = cfg.device
     t0 = time.time()
     w = out_dir / "classifier.pt"
     if not (reuse and w.exists()):
-        train_classifier(cls_data, w, c.model, c.imgsz, epochs or c.epochs, c.batch, c.patience, name=tag)
+        train_classifier(cls_data, w, c.model, c.imgsz, epochs or c.epochs, c.batch, c.patience, name=tag,
+                         device=device, workers=int(c.get("workers", 0)), auto_augment=c.get("auto_augment"),
+                         extra=dict(c.get("extra") or {}))
     else:
         log.info("    reaproveitando classificador já treinado: %s", w)
     t_cls = time.time() - t0
-    clf = Classifier(w, c.imgsz)
+    clf = Classifier(w, c.imgsz, device=device)
 
     p = cfg.padim
     t0 = time.time()
-    padim = PaDiM(p.backbone, p.input_size, p.feature_dims, p.get("score_mode", "mean"))
+    padim = PaDiM(p.backbone, p.input_size, p.feature_dims, p.get("score_mode", "mean"), device=device)
     # PaDiM aprende batata normal: recortes originais + janelas desalinhadas
     normal_train = [x for x, k in list_split(data_dir, "train", kind="orig+win") if k in normal]
     padim.fit(load_images(normal_train))
@@ -209,7 +214,7 @@ def write_report(cfg, ds: dict, main: dict, cv: dict | None, unk: dict | None, o
         if cv.get("janelas"):
             L += block("Validação cruzada – janelas desalinhadas", cv["janelas"], win_note)
     L += block("Modelo final – conjunto de teste – recortes centralizados", main,
-               "Modelo salvo em `models/`. Conjunto de teste pequeno: os números variam bastante de uma divisão para outra.")
+               f"Modelo salvo em `{Path(cfg.classifier.weights).parent.as_posix()}/`. Conjunto de teste pequeno: os números variam bastante de uma divisão para outra.")
     if main.get("janelas"):
         L += block("Modelo final – conjunto de teste – janelas desalinhadas", main["janelas"], win_note)
     if unk:
@@ -223,11 +228,15 @@ def write_report(cfg, ds: dict, main: dict, cv: dict | None, unk: dict | None, o
                      f"{fmt_pct(v['padim_sozinho'])} | {fmt_pct(v['falso_alarme_batata'])} |")
         L.append("")
     t = main["tempo"]
+    dev = "GPU" if str(cfg.device).startswith("cuda") else "CPU"
     L += ["## Desempenho", "",
-          f"- Treino do classificador: {t['treino_classificador_s']:.0f} s · PaDiM: {t['treino_padim_s']:.0f} s (CPU)",
-          f"- Inferência: **{t['inferencia_ms_por_recorte']:.1f} ms por recorte** (os dois modelos, CPU)",
+          f"- Config: `{cfg.get('_path', 'config.yaml')}` · classificador `{cfg.classifier.model}` "
+          f"imgsz {cfg.classifier.imgsz} · PaDiM `{cfg.padim.backbone}` {cfg.padim.input_size}px",
+          f"- Treino do classificador: {t['treino_classificador_s']:.0f} s · PaDiM: {t['treino_padim_s']:.0f} s ({dev})",
+          f"- Inferência: **{t['inferencia_ms_por_recorte']:.1f} ms por recorte** (os dois modelos, {dev}; "
+          "na máquina da linha, em CPU, será mais lento)",
           f"- Limiar PaDiM calibrado para {100 * cfg.padim.target_fpr:.0f}% de falso alarme na validação: {main['padim']['limiar']:.2f}",
-          "", "## Arquivos", "", "- `models/classifier.pt`, `models/padim.pt`"] + [f"- `{o}`" for o in onnx]
+          "", "## Arquivos", "", f"- `{cfg.classifier.weights}`, `{cfg.padim.weights}`"] + [f"- `{o}`" for o in onnx]
     p = ROOT / "reports" / "relatorio.md"
     p.parent.mkdir(exist_ok=True)
     p.write_text("\n".join(L), encoding="utf-8")
@@ -251,11 +260,15 @@ def main():
     ap.add_argument("--no-export", action="store_true")
     ap.add_argument("--reuse", action="store_true", help="reaproveita o classificador de runs/final (não retreina)")
     ap.add_argument("--skip-prepare", action="store_true", help="usa data/prepared como está")
+    ap.add_argument("--device", default=None, help="auto | cpu | cuda (sobrescreve o config)")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
     logging.getLogger("ultralytics").setLevel(logging.WARNING)
 
     cfg = load_config(a.config)
+    cfg["device"] = resolve_device(a.device or cfg.get("device", "auto"))
+    cfg["_path"] = Path(a.config).name if a.config else "config.yaml"
+    log.info("Dispositivo de treino: %s", cfg["device"])
     source = resolve(a.source or cfg.data.source)
     prepared = resolve(cfg.data.prepared)
 
@@ -272,8 +285,8 @@ def main():
 
     log.info("2/5 Treinando modelo final (YOLO-cls + PaDiM)")
     main_m = run_experiment(cfg, prepared, ROOT / "runs" / "final", "final", reuse=a.reuse)
-    models = ROOT / "models"
-    models.mkdir(exist_ok=True)
+    resolve(cfg.classifier.weights).parent.mkdir(parents=True, exist_ok=True)
+    resolve(cfg.padim.weights).parent.mkdir(parents=True, exist_ok=True)
     shutil.copy(ROOT / "runs" / "final" / "classifier.pt", resolve(cfg.classifier.weights))
     shutil.copy(ROOT / "runs" / "final" / "padim.pt", resolve(cfg.padim.weights))
     log.info("    híbrido no teste: recall %s, falso alarme %s",

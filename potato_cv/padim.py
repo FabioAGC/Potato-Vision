@@ -35,7 +35,7 @@ class FeatureExtractor(torch.nn.Module):
         self.eval()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:  # x: float RGB 0..1, NCHW
-        x = (x - _MEAN) / _STD
+        x = (x - _MEAN.to(x.device)) / _STD.to(x.device)
         f1 = self.layer1(self.stem(x))
         f2 = self.layer2(f1)
         f3 = self.layer3(f2)
@@ -54,13 +54,15 @@ def to_tensor(crops: list[np.ndarray], size: int) -> torch.Tensor:
 
 
 class PaDiM:
-    def __init__(self, backbone="resnet18", input_size=48, feature_dims=200, score_mode="mean", seed=0):
+    def __init__(self, backbone="resnet18", input_size=48, feature_dims=200, score_mode="mean", seed=0,
+                 device: str = "cpu"):
+        self.device = device
         self.backbone, self.input_size, self.feature_dims = backbone, input_size, feature_dims
         self.score_mode = score_mode
         full = {"resnet18": 448, "wide_resnet50_2": 1792}[backbone]
         g = torch.Generator().manual_seed(seed)
         idx = torch.randperm(full, generator=g)[:feature_dims].sort().values
-        self.extractor = FeatureExtractor(backbone, idx)
+        self.extractor = FeatureExtractor(backbone, idx).to(device)
         self.mean = self.inv_cov = None
         self.threshold: float | None = None
         self.score_stats: dict = {}
@@ -74,9 +76,9 @@ class PaDiM:
             x = to_tensor(crops[i:i + batch], self.input_size)
             if self.onnx_session is not None:
                 y = self.onnx_session.run(None, {"input": x.numpy()})[0]
-                out.append(torch.from_numpy(y))
+                out.append(torch.from_numpy(y).to(self.device))
             else:
-                out.append(self.extractor(x))
+                out.append(self.extractor(x.to(self.device)))
         return torch.cat(out)
 
     # ------------------------------------------------------------ fit
@@ -96,16 +98,19 @@ class PaDiM:
         mean = s / n                                                              # D, HW
         mt = mean.T                                                               # HW, D
         cov = (ss - n * mt[:, :, None] * mt[:, None, :]) / max(1, n - 1)
-        cov += 0.01 * torch.eye(d, dtype=cov.dtype)
+        cov += 0.01 * torch.eye(d, dtype=cov.dtype, device=cov.device)
         self.mean = mean.float()
-        # Cholesky (cov é simétrica positiva-definida) com 1 thread: o inv
-        # multi-thread travava no Windows depois do treino do YOLO no mesmo processo.
-        prev = torch.get_num_threads()
-        torch.set_num_threads(1)
-        try:
+        if cov.is_cuda:
             self.inv_cov = torch.cholesky_inverse(torch.linalg.cholesky(cov)).float()
-        finally:
-            torch.set_num_threads(prev)
+        else:
+            # Cholesky (cov é simétrica positiva-definida) com 1 thread: o inv
+            # multi-thread travava no Windows depois do treino do YOLO no mesmo processo.
+            prev = torch.get_num_threads()
+            torch.set_num_threads(1)
+            try:
+                self.inv_cov = torch.cholesky_inverse(torch.linalg.cholesky(cov)).float()
+            finally:
+                torch.set_num_threads(prev)
         self.map_hw = (h, w)
 
     # ------------------------------------------------------------ score
@@ -113,14 +118,15 @@ class PaDiM:
     def anomaly_maps(self, crops: list[np.ndarray], batch: int = 64) -> torch.Tensor:
         """Mapa de anomalia (N, S, S) na resolução input_size."""
         maps = []
+        mean, inv_cov = self.mean.to(self.device), self.inv_cov.to(self.device)
         for i in range(0, len(crops), batch):
             emb = self._embed(crops[i:i + batch], batch)
             n, d, h, w = emb.shape
-            delta = (emb.reshape(n, d, h * w) - self.mean).permute(2, 0, 1)  # HW, N, D
-            m = (torch.bmm(delta, self.inv_cov) * delta).sum(-1)          # HW, N
+            delta = (emb.reshape(n, d, h * w) - mean).permute(2, 0, 1)       # HW, N, D
+            m = (torch.bmm(delta, inv_cov) * delta).sum(-1)               # HW, N
             m = m.clamp_min(0).sqrt().T.reshape(n, 1, h, w)
             m = F.interpolate(m, size=self.input_size, mode="bilinear", align_corners=False)
-            maps.append(_gaussian_blur(m, sigma=4).squeeze(1))
+            maps.append(_gaussian_blur(m, sigma=4).squeeze(1).cpu())
         return torch.cat(maps)
 
     def score(self, crops: list[np.ndarray]) -> np.ndarray:
@@ -144,14 +150,16 @@ class PaDiM:
     def save(self, path: Path) -> None:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         torch.save({"backbone": self.backbone, "input_size": self.input_size,
-                    "feature_dims": self.feature_dims, "score_mode": self.score_mode, "idx": self.extractor.idx,
-                    "mean": self.mean, "inv_cov": self.inv_cov, "map_hw": self.map_hw,
+                    "feature_dims": self.feature_dims, "score_mode": self.score_mode,
+                    "idx": self.extractor.idx.cpu(), "mean": self.mean.cpu(), "inv_cov": self.inv_cov.cpu(),
+                    "map_hw": self.map_hw,
                     "threshold": self.threshold, "score_stats": self.score_stats}, path)
 
     @classmethod
     def load(cls, path: Path, engine: str = "torch") -> "PaDiM":
         s = torch.load(path, map_location="cpu", weights_only=False)
         obj = cls.__new__(cls)
+        obj.device = "cpu"
         obj.backbone, obj.input_size, obj.feature_dims = s["backbone"], s["input_size"], s["feature_dims"]
         obj.score_mode = s.get("score_mode", "mean")
         obj.extractor = FeatureExtractor(obj.backbone, s["idx"])
@@ -177,7 +185,7 @@ class PaDiM:
 
 def _gaussian_blur(x: torch.Tensor, sigma: float) -> torch.Tensor:
     k = int(4 * sigma + 1) | 1
-    t = torch.arange(k, dtype=torch.float32) - k // 2
+    t = torch.arange(k, dtype=torch.float32, device=x.device) - k // 2
     g = torch.exp(-t ** 2 / (2 * sigma ** 2))
     g = (g / g.sum()).view(1, 1, 1, k)
     x = F.conv2d(F.pad(x, (k // 2, k // 2, 0, 0), mode="reflect"), g)

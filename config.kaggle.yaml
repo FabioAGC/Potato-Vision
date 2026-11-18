@@ -1,0 +1,110 @@
+# =====================================================================
+#  Potato CV - configuração para treino em GPU (Kaggle / Colab)
+#  Igual ao config.yaml, mas com modelos e imagens maiores, RandAugment
+#  e mais janelas sintéticas. Use: python train.py --config config.kaggle.yaml
+#  Os modelos gerados rodam no run.py normalmente (CPU), só mais devagar:
+#  copie também este arquivo e rode  run.py --config config.kaggle.yaml
+# =====================================================================
+
+# ---------------- Dados ----------------
+data:
+  # Pasta de origem: subpastas com o nome da classe (pode haver subpastas
+  # de split no meio, ex.: train/Stone/x.bmp). A classe é sempre o nome da
+  # pasta imediatamente acima da imagem.
+  source: dataset_potatoes/dataset_potatoes
+  prepared: data/prepared          # saída: train/val/test sem duplicatas
+  split: [0.70, 0.15, 0.15]        # treino / validação / teste
+  seed: 42
+  # Janelas desalinhadas geradas de mosaicos (simulam a janela deslizante
+  # sobre o quadro real, onde o objeto quase nunca está centralizado)
+  windows: {train: 8000, val: 1500, test: 1500}
+
+# Classes consideradas "normais" (não geram alerta). Qualquer outra classe
+# do dataset é tratada como corpo estranho.
+normal_classes: [Good, Damaged]
+
+# Nomes exibidos na tela
+display_names:
+  Good: Batata
+  Damaged: Batata danificada
+  Plant: Planta/Galho
+  Stone: Pedra
+  Unknown: Desconhecido
+
+# ---------------- Modelos ----------------
+# Onde treinar: auto (GPU se houver, senão CPU) | cpu | cuda
+device: auto
+
+classifier:
+  model: yolo11s-cls.pt            # n -> s (testar m: yolo11m-cls.pt)
+  imgsz: 128                       # 64 -> 128: mais detalhe p/ separar batata boa x danificada
+  epochs: 150
+  cv_epochs: 80                    # épocas em cada parte da validação cruzada
+  batch: 128
+  patience: 30
+  workers: 4                       # leitores de dados em paralelo (Kaggle tem 4 CPUs)
+  auto_augment: randaugment        # caro em CPU, barato em GPU
+  extra: {}                        # outros argumentos do Ultralytics, ex.: {optimizer: AdamW, lr0: 0.001}
+  weights: models/gpu/classifier.pt   # separado dos modelos de CPU
+
+padim:
+  backbone: wide_resnet50_2        # resnet18 -> wide_resnet50_2 (backbone do artigo do PaDiM)
+  input_size: 64                   # 48 -> 64 (padim.pt cresce com input_size² · feature_dims²)
+  feature_dims: 300                # 200 -> 300
+  score_mode: mean                 # mean | max  (agregação do mapa de anomalia)
+  target_fpr: 0.05                 # limiar = 5% de falso alarme em batata normal (validação)
+  weights: models/gpu/padim.pt
+
+# ---------------- Decisão (fusão) ----------------
+decision:
+  foreign_conf: 0.80   # confiança mínima p/ Pedra/Planta (escolhido na validação: 0.6 = mais recall, 0.9 = menos alarme)
+  normal_conf: 0.90    # se PaDiM diz "anormal" e o classificador diz "batata"
+                       # com confiança < normal_conf  ->  Desconhecido
+
+# ---------------- Câmera ----------------
+camera:
+  # simulator | usb | rtsp | genicam | video | images
+  type: simulator
+  width: 1280
+  height: 720
+  fps: 30
+
+  usb:
+    index: 0
+  rtsp:
+    url: rtsp://usuario:senha@192.168.0.100:554/stream1
+  genicam:
+    # Arquivo .cti do produtor GenTL do fabricante (Basler, Hikrobot, FLIR...)
+    cti: C:/Program Files/Basler/pylon/Runtime/x64/ProducerGEV.cti
+    serial: ""                     # vazio = primeira câmera encontrada
+    exposure_us: 2000
+  video:
+    path: data/videos/linha.mp4
+    loop: true
+  images:
+    folder: data/captures
+  simulator:
+    width: 960
+    height: 640
+    object_px: 100                 # tamanho de cada objeto na imagem simulada
+    foreign_rate: 0.06             # fração de corpos estranhos
+    speed_px: 4                    # deslocamento da esteira por quadro
+    source_split: test             # usa imagens nunca vistas no treino
+
+# ---------------- Inferência no quadro ----------------
+inference:
+  tile_px: 100        # tamanho (px) de UM objeto no quadro da câmera -> ajustar na instalação
+  stride: 0.5         # passo da janela deslizante (fração do tile)
+  roi: null           # [x, y, w, h] área da esteira; null = quadro inteiro
+  every_n_frames: 1   # processa 1 a cada N quadros
+  confirm_frames: 3   # alarme precisa aparecer em N quadros seguidos (anti-pisca).
+                      # Deve ser menor que o nº de quadros em que um objeto fica visível.
+  max_missing: 1      # quadros sem ver o objeto antes de esquecê-lo
+  aggregation: grid   # grid = média das janelas por região (recomendado) | window
+  engine: torch       # torch | onnx
+
+# ---------------- Tela ----------------
+display:
+  window: Potato CV - Corpos Estranhos
+  show_unknown: true
+  show_normal: false

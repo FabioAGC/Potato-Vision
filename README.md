@@ -61,6 +61,7 @@ O ambiente fica em `%USERPROFILE%\.venvs\potato-cv` (fora do OneDrive, para não
 | Treinar (dataset do config) | `& $py train.py` |
 | Treinar com outro dataset | `& $py train.py --source D:\fotos_batata` |
 | Treinar + métricas confiáveis | `& $py train.py --cv 5 --unknown-test` |
+| Treinar na GPU (config maior) | `& $py train.py --config config.kaggle.yaml` |
 | Tela ao vivo (simulador) | `& $py run.py` |
 | Tela ao vivo (webcam USB) | `& $py run.py --camera usb --index 0` |
 | Tela ao vivo (câmera IP) | `& $py run.py --camera rtsp --url rtsp://user:senha@IP:554/stream` |
@@ -68,6 +69,21 @@ O ambiente fica em `%USERPROFILE%\.venvs\potato-cv` (fora do OneDrive, para não
 | Capturar imagens da câmera | `& $py capture.py --every 1` |
 
 Teclas na tela ao vivo: **q** sair · **p** pausar · **s** salvar quadro.
+
+### Treinar em GPU (Kaggle)
+
+`kaggle_train.ipynb` treina com a configuração maior de `config.kaggle.yaml`
+(YOLO `s` em 128 px com RandAugment, PaDiM com `wide_resnet50_2`, mais janelas sintéticas):
+
+1. No Kaggle: *Create → New Notebook → File → Import Notebook* e escolha `kaggle_train.ipynb`.
+2. *Add Input → Upload*: envie `dataset_potatoes.zip` como Dataset (opcional, o repositório já traz uma cópia).
+3. *Settings*: Accelerator = GPU (T4 ou P100), Internet = ligado. *Run All*.
+4. Baixe `potato_models_gpu.zip` da aba Output, descompacte na pasta do projeto e rode
+   `& $py run.py --config config.kaggle.yaml`.
+
+Os modelos de GPU ficam em `models/gpu/` e não substituem os de CPU. Compare as duas
+validações cruzadas no fim do notebook antes de trocar. Para treinar em GPU fora do Kaggle:
+`train.py --config config.kaggle.yaml` (`device: auto` usa a GPU se houver).
 
 ### Formato do dataset
 
@@ -116,6 +132,8 @@ As câmeras ao vivo leem numa thread separada (sempre o quadro mais novo) e
 
 ```
 config.yaml          configuração geral
+config.kaggle.yaml   configuração maior para treino em GPU
+kaggle_train.ipynb   notebook de treino no Kaggle
 train.py             pipeline de treino + avaliação + exportação
 run.py               detecção ao vivo com tela
 capture.py           captura de imagens para dataset

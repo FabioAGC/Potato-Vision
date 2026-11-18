@@ -30,3 +30,12 @@ def resolve(p: str | Path) -> Path:
     """Caminho relativo -> relativo à raiz do projeto."""
     p = Path(p)
     return p if p.is_absolute() else ROOT / p
+
+
+def resolve_device(device: str | None = "auto") -> str:
+    """'auto' -> 'cuda' se houver GPU, senão 'cpu'. Aceita também 'cuda', 'cuda:0', 'cpu'."""
+    device = str(device or "auto").lower()
+    if device == "auto":
+        import torch
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    return device
