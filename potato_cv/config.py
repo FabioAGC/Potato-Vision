@@ -44,22 +44,16 @@ def resolve_device(device: str | None = "auto") -> str:
 
 
 def check_gpu(torch, index: int = 0) -> None:
-    """Falha com mensagem clara se este PyTorch não tem kernels para a GPU
-    (ex.: P100/sm_60 em PyTorch recente -> 'no kernel image is available')."""
+    """Falha com mensagem clara se a GPU não roda um teste simples com este PyTorch
+    ('no kernel image is available' = PyTorch sem código para esta placa)."""
     if not torch.cuda.is_available():
         raise SystemExit("device=cuda, mas nenhuma GPU foi encontrada.")
     major, minor = torch.cuda.get_device_capability(index)
     name = torch.cuda.get_device_name(index)
-    archs = torch.cuda.get_arch_list()
-    sms = [int(a.split("_")[1]) for a in archs if a.startswith("sm_")]
-    if sms and major * 10 + minor < min(sms):
-        raise SystemExit(
-            f"A GPU {name} (sm_{major}{minor}) não é suportada por este PyTorch {torch.__version__} "
-            f"(compilado para {', '.join(archs)}).\n"
-            "No Kaggle: Settings -> Accelerator -> 'GPU T4 x2'. Ou rode com --device cpu.")
     try:  # teste rápido
         x = torch.rand(64, 64, device=f"cuda:{index}")
         (x @ x.T).relu().sum().item()
     except Exception as e:
         raise SystemExit(f"A GPU {name} (sm_{major}{minor}) falhou num teste simples: {e}\n"
-                         "No Kaggle: Settings -> Accelerator -> 'GPU T4 x2'. Ou rode com --device cpu.")
+                         f"PyTorch {torch.__version__} compilado para: {', '.join(torch.cuda.get_arch_list())}. "
+                         "Troque a GPU ou rode com --device cpu.")
