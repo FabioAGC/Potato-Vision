@@ -62,6 +62,8 @@ O ambiente fica em `%USERPROFILE%\.venvs\potato-cv` (fora do OneDrive, para não
 | Treinar com outro dataset | `& $py train.py --source D:\fotos_batata` |
 | Treinar + métricas confiáveis | `& $py train.py --cv 5 --unknown-test` |
 | Treinar na GPU (config maior) | `& $py train.py --config config.kaggle.yaml` |
+| Medir modelo treinado em imagens novas | `& $py evaluate_model.py --source pasta_rotulada` |
+| Comparar modelo atual × novo | `& $py evaluate_model.py --config config.yaml config.kaggle.yaml --source pasta --errors reports/erros` |
 | Tela ao vivo (simulador) | `& $py run.py` |
 | Tela ao vivo (webcam USB) | `& $py run.py --camera usb --index 0` |
 | Tela ao vivo (câmera IP) | `& $py run.py --camera rtsp --url rtsp://user:senha@IP:554/stream` |
@@ -151,6 +153,7 @@ As câmeras ao vivo leem numa thread separada (sempre o quadro mais novo) e
 config.yaml          configuração geral
 config.kaggle.yaml   configuração maior para treino em GPU
 kaggle_train.ipynb   notebook de treino no Kaggle
+evaluate_model.py    mede/compara modelos treinados numa pasta rotulada (sem retreinar)
 import_roboflow.py   converte export YOLOv8 do Roboflow em recortes por classe
 train.py             pipeline de treino + avaliação + exportação
 run.py               detecção ao vivo com tela
