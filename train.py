@@ -233,8 +233,8 @@ def write_report(cfg, ds: dict, main: dict, cv: dict | None, unk: dict | None, o
           f"- Config: `{cfg.get('_path', 'config.yaml')}` · classificador `{cfg.classifier.model}` "
           f"imgsz {cfg.classifier.imgsz} · PaDiM `{cfg.padim.backbone}` {cfg.padim.input_size}px",
           f"- Treino do classificador: {t['treino_classificador_s']:.0f} s · PaDiM: {t['treino_padim_s']:.0f} s ({dev})",
-          f"- Inferência: **{t['inferencia_ms_por_recorte']:.1f} ms por recorte** (os dois modelos, {dev}; "
-          "na máquina da linha, em CPU, será mais lento)",
+          f"- Inferência: **{t['inferencia_ms_por_recorte']:.1f} ms por recorte** (os dois modelos, {dev}"
+          + ("; na máquina da linha, em CPU, será mais lento)" if dev == "GPU" else ")"),
           f"- Limiar PaDiM calibrado para {100 * cfg.padim.target_fpr:.0f}% de falso alarme na validação: {main['padim']['limiar']:.2f}",
           "", "## Arquivos", "", f"- `{cfg.classifier.weights}`, `{cfg.padim.weights}`"] + [f"- `{o}`" for o in onnx]
     p = ROOT / "reports" / "relatorio.md"
