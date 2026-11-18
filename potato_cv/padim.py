@@ -100,17 +100,18 @@ class PaDiM:
         cov = (ss - n * mt[:, :, None] * mt[:, None, :]) / max(1, n - 1)
         cov += 0.01 * torch.eye(d, dtype=cov.dtype, device=cov.device)
         self.mean = mean.float()
-        if cov.is_cuda:
-            self.inv_cov = torch.cholesky_inverse(torch.linalg.cholesky(cov)).float()
-        else:
-            # Cholesky (cov é simétrica positiva-definida) com 1 thread: o inv
-            # multi-thread travava no Windows depois do treino do YOLO no mesmo processo.
-            prev = torch.get_num_threads()
-            torch.set_num_threads(1)
-            try:
-                self.inv_cov = torch.cholesky_inverse(torch.linalg.cholesky(cov)).float()
-            finally:
-                torch.set_num_threads(prev)
+        # Inversa sempre na CPU: é rápida (HW matrizes D x D) e evita as rotinas de
+        # álgebra linear da GPU, que faltam em algumas placas/builds do PyTorch
+        # ("no kernel image is available" na P100 do Kaggle).
+        # Cholesky (cov é simétrica positiva-definida) com 1 thread: o inv
+        # multi-thread travava no Windows depois do treino do YOLO no mesmo processo.
+        prev = torch.get_num_threads()
+        torch.set_num_threads(1)
+        try:
+            cov = cov.cpu()
+            self.inv_cov = torch.cholesky_inverse(torch.linalg.cholesky(cov)).float().to(self.device)
+        finally:
+            torch.set_num_threads(prev)
         self.map_hw = (h, w)
 
     # ------------------------------------------------------------ score
